@@ -182,6 +182,7 @@ Note: note that the time values we need to compute are very small (e.g. light ta
       src/tutorials/polarization_tutorials
       src/tutorials/diff_tutorials
       src/tutorials/angulararea_tutorials
+      src/tutorials/ghost_imaging_tutorials
 
 .. toctree::
       :maxdepth: 1

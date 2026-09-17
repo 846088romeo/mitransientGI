@@ -33,6 +33,7 @@ from .emitters import *
 
 from .utils import speed_of_light, cornell_box
 from . import nlos
+from . import ghost_imaging as gi
 if mi.is_polarized:
     from . import polarized_visualization as vis
 else:
