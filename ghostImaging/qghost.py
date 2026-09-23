@@ -39,10 +39,9 @@ import argparse
 import math
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import time
 import mitsuba as mi
-mi.set_variant("scalar_rgb")
 
 import numpy as np
 
@@ -421,7 +420,7 @@ def correlate_events_to_histogram(
 
 def simulate(
     scene,
-    bucket: SphereBucket | DiskBucket,
+    bucket: Union[SphereBucket, DiskBucket],
     source: np.ndarray,
     spp: int,
     width: int,
@@ -776,6 +775,11 @@ def save_outputs(hist: np.ndarray, t_edges: np.ndarray, out_dir: str, spad_z: fl
 
 
 def main() -> None:
+    # Configure a standalone invocation without overriding a variant chosen
+    # by the caller when this module is imported from another application.
+    if mi.variant() is None:
+        mi.set_variant("scalar_rgb")
+
     # -------------------------------------------------------------------
     # Fase A: parseo y validación de argumentos de entrada
     # -------------------------------------------------------------------

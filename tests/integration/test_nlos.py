@@ -103,9 +103,13 @@ def test00_Z_single():
         laser_obj)
 
     transient_integrator = scene.integrator()
-    transient_integrator.prepare_transient(scene, sensor=0)
 
-    # Render the scene and develop the data
+    ########################################################
+    # transient_integrator.prepare_transient(scene, sensor=0)
+    ########################################################
+
+    # Render the scene and develop the data. The integrator prepares the film
+    # internally.
     data_steady, data_transient = transient_integrator.render(scene)
     # And evaluate the output to launch the corresponding kernel
     dr.eval(data_steady, data_transient)
@@ -115,4 +119,8 @@ def test00_Z_single():
     # data_steady
     # maybe this is just not a problem
     assert data_steady.shape == (sy, sx, 3)
-    assert data_transient.shape == (sx, sy, 300, 3)
+    assert data_transient.shape == (sy, sx, 300, 3)
+    ################################################
+    # assert data_transient.shape == (sx, sy, 300, 3)
+    ################################################
+    

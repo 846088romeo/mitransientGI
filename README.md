@@ -116,6 +116,63 @@ which will also install the `mitsuba` Python package as a dependency.
 - (optional) For computation on the GPU: `Nvidia driver >= 495.89`
 - (optional) For vectorized / parallel computation on the CPU: `LLVM >= 11.1`
 
+## Testing a local checkout
+
+When working from the repository root, Python imports the local `mitransient/`
+directory directly, so installing the package is not required for development.
+You do need to install its dependencies. For a CPU test environment, create a
+virtual environment and install the documentation requirements:
+
+```bash
+python -m venv .venv
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r docs/requirements.txt
+python -m pytest -q tests/integration/test_transient_smoke.py
+```
+
+The smoke test registers the transient plugins, builds a small scene, renders a
+transient film, and checks the output dimensions and non-zero radiance. The
+existing NLOS integration test can be run with:
+
+```bash
+python -m pytest -q tests/integration/test_nlos.py
+```
+
+`pip install -e .` is optional for local development. It is useful when you
+want to import `mitransient` from another directory or expose the `qghost`
+console command.
+
+### Windows: LLVM backend
+
+The CPU variant (`llvm_ad_rgb`) requires the native LLVM library. If the test
+reports that `LLVM-C.dll` cannot be found, install the official LLVM Windows
+package and open a new PowerShell. Then configure DrJit for the current
+session, adjusting the path if LLVM was installed elsewhere:
+
+```powershell
+$env:DRJIT_LIBLLVM_PATH = "C:\Program Files\LLVM\bin\LLVM-C.dll"
+python -m pytest -q tests/integration/test_transient_smoke.py
+```
+
+To persist the setting for future terminals:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "DRJIT_LIBLLVM_PATH",
+  "C:\Program Files\LLVM\bin\LLVM-C.dll",
+  "User"
+)
+```
+
+Alternatively, on a machine with a working NVIDIA/CUDA Mitsuba backend, the
+test can use it without LLVM:
+
+```powershell
+$env:MITRANSIENT_VARIANT = "cuda_ad_rgb"
+python -m pytest -q tests/integration/test_transient_smoke.py
+```
+
 ## After installation
 
 At this point, you should be able to `import mitsuba` and `import mitransient` in your Python code (careful about setting the correct `PATH` environment variable if you have compiled Mitsuba 3 yourself, see the section below).
