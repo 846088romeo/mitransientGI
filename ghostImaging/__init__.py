@@ -1,1 +1,0 @@
-"""Quantum ghost-imaging command-line simulation tools."""

@@ -140,8 +140,9 @@ python -m pytest -q tests/integration/test_nlos.py
 ```
 
 `pip install -e .` is optional for local development. It is useful when you
-want to import `mitransient` from another directory or expose the `qghost`
-console command.
+want to import `mitransient` from another directory. The scene-based quantum
+simulator can be run directly from the checkout with
+`python mitransient/qghost.py`.
 
 ### Windows: LLVM backend
 

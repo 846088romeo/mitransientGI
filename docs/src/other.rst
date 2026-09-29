@@ -25,13 +25,6 @@ Utils
 .. automodule:: mitransient.utils
     :members:
 
-
-Ghost imaging utils
--------------------
-
-.. automodule:: mitransient.ghost_imaging
-    :members:
-
 Quantum ghost imaging simulator
 --------------------------------
 

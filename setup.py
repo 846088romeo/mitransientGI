@@ -22,11 +22,6 @@ setup(
     extras_require={
         'recommended': ['numpy', 'matplotlib', 'opencv-python'],
     },
-    entry_points={
-        'console_scripts': [
-            'qghost=ghostImaging.qghost:main',
-        ],
-    },
     long_description=readme,
     long_description_content_type="text/markdown",
     python_requires=">=3.8"
