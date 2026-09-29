@@ -1,0 +1,39 @@
+<scene version="3.0.0">
+    <!-- Importa tus shapes -->
+    <include filename="tu_escena.xml"/>
+
+    <!-- Integrador transient -->
+    <integrator type="transient_path"/>
+
+    <!-- Sensor: una cámara detrás mirando hacia la escena -->
+    <sensor type="perspective">
+        <transform name="to_world">
+            <!-- Pon la cámara donde iría el bucket (detrás), mirando hacia -Z si la escena está hacia +Z -->
+            <lookat origin="0, 0, 3"
+                    target="0, 0, 0"
+                    up="0, 1, 0"/>
+        </transform>
+
+        <float name="fov" value="60"/>
+
+        <!-- Film transient: guarda H×W×T -->
+        <film type="transient_hdr_film">
+            <integer name="width" value="128"/>
+            <integer name="height" value="128"/>
+
+            <!-- bins temporales -->
+            <integer name="temporal_bins" value="512"/>
+            <float name="start_opl" value="0.0"/>
+            <!-- bin_width_opl en METROS (OPL). Ej: 3 mm por bin -->
+            <float name="bin_width_opl" value="0.003"/>
+
+            <rfilter type="box"/>
+        </film>
+    </sensor>
+
+    <!-- Emisor: representa “idler saliendo del cristal” -->
+    <emitter type="point">
+        <point name="position" x="0" y="0" z="-3"/>
+        <rgb name="intensity" value="1, 1, 1"/>
+    </emitter>
+</scene>

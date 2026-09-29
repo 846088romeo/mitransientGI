@@ -1,0 +1,25 @@
+<scene version="3.0.0">
+    <!-- Letra L - Ghost Imaging -->
+    <!-- Fecha: auto-generada -->
+
+    <shape type="rectangle">
+        <transform name="to_world">
+            <scale x="0.09" y="0.58" z="1"/>
+            <translate x="-0.28" y="0.02" z="1.0"/>
+        </transform>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0, 0, 0"/>
+        </bsdf>
+    </shape>
+
+    <shape type="rectangle">
+        <transform name="to_world">
+            <scale x="0.42" y="0.09" z="1"/>
+            <translate x="-0.08" y="-0.3" z="1.0"/>
+        </transform>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0, 0, 0"/>
+        </bsdf>
+    </shape>
+
+</scene>

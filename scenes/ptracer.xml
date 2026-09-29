@@ -1,0 +1,56 @@
+<scene version="3.0.0">
+    <integrator type="ptracer">
+        <integer name="max_depth" value="-1"/>
+        <integer name="rr_depth" value="20"/>
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="fov" value="45"/>
+        <transform name="to_world">
+            <lookat origin="0, 1.5, 4" target="0, 1, 0" up="0, 1, 0"/>
+        </transform>
+        <sampler type="independent">
+            <integer name="sample_count" value="64"/>
+        </sampler>
+        <film type="hdrfilm">
+            <integer name="width" value="640"/>
+            <integer name="height" value="360"/>
+            <string name="pixel_format" value="rgb"/>
+            <string name="file_format" value="openexr"/>
+        </film>
+    </sensor>
+
+    <!-- Suelo -->
+    <shape type="rectangle">
+        <transform name="to_world">
+            <scale x="4" y="4" z="1"/>
+            <translate x="0" y="0" z="0"/>
+            <rotate x="1" angle="-90"/>
+        </transform>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0.8, 0.8, 0.8"/>
+        </bsdf>
+    </shape>
+
+    <!-- Esfera -->
+    <shape type="sphere">
+        <transform name="to_world">
+            <translate x="0" y="1" z="0"/>
+        </transform>
+        <bsdf type="diffuse">
+            <rgb name="reflectance" value="0.2, 0.5, 0.9"/>
+        </bsdf>
+    </shape>
+
+    <!-- Luz de área -->
+    <shape type="rectangle">
+        <transform name="to_world">
+            <scale x="1.5" y="1.5" z="1"/>
+            <translate x="0" y="3" z="0"/>
+            <rotate x="1" angle="90"/>
+        </transform>
+        <emitter type="area">
+            <rgb name="radiance" value="50, 50, 50"/>
+        </emitter>
+    </shape>
+</scene>
