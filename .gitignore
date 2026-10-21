@@ -11,6 +11,7 @@ scenes/**/*.npy
 
 docs/generated
 
+output/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -550,7 +550,11 @@ def simulate(
         px = min(width - 1, max(0, int(np.floor(u * width))))  # Clipping defensivo para evitar índices fuera de rango.
         py = min(height - 1, max(0, int(np.floor(v * height))))
 
-        t_signal = ts / C
+        # Mitsuba reports geometric distances in metres. In vacuum these are
+        # optical path lengths (OPL); convert to seconds only at the detector
+        # boundary because the public event API currently exposes seconds.
+        signal_opl = ts
+        t_signal = signal_opl / C
         t_abs_signal = t_emit + t_signal + rng.normal(0.0, signal_jitter_sec)  # Timestamp absoluto con jitter.
         t_abs_signal = quantize_time(t_abs_signal, time_quantization_sec)  # Cuantización temporal.
         signal_events.append((px, py, t_abs_signal))
@@ -605,7 +609,8 @@ def simulate(
 
         counts["bucket_hits"] += 1
 
-        t_idler = (ti + tb) / C
+        idler_opl = ti + tb
+        t_idler = idler_opl / C
         t_abs_idler = t_emit + t_idler + rng.normal(0.0, bucket_jitter_sec)  # Timestamp absoluto con jitter.
         t_abs_idler = quantize_time(t_abs_idler, time_quantization_sec)
         # Filtrado por polarización en el bucket: solo los rayos con +1 pasan.

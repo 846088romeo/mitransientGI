@@ -7,5 +7,7 @@ if mi.variant() is not None and not mi.variant().startswith('scalar'):
     importlib.reload(transient_hdr_film)
     from . import phasor_hdr_film
     importlib.reload(phasor_hdr_film)
+    from . import ghost_film
+    importlib.reload(ghost_film)
 
 del importlib, mi
