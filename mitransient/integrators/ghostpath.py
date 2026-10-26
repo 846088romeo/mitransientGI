@@ -51,7 +51,10 @@ class QGhostIntegrator(TransientADIntegrator):
         sampler.seed(seed, lane_count)
 
         d_signal, d_idler, pair_weight = emitter.sample_pair(
-            sampler.next_2d(), mi.Bool(True)
+            sample=sampler.next_2d(),
+            noise_sample_idler=sampler.next_2d(),
+            noise_sample_signal=sampler.next_2d(),
+            active=mi.Bool(True)
         )
         source = emitter.source
         signal_direction = d_signal.d
@@ -95,10 +98,23 @@ class QGhostIntegrator(TransientADIntegrator):
         # Give each generated pair an absolute emission OPL. The film does not
         # store a pair id: this clock lets its cross-correlation recover the
         # temporal peak while retaining accidental coincidences statistically.
-        lane = dr.arange(mi.UInt32, sample_count)
-        emission_opl = self.emission_opl_offset + mi.Float(lane) * (
-            mi.Float(299792458.0) / self.pair_rate_hz
-        )
+        # lane = dr.arange(mi.UInt32, sample_count)
+        # emission_opl = self.emission_opl_offset + mi.Float(lane) * (
+        #     mi.Float(299792458.0) / self.pair_rate_hz
+        # )
+
+        # Random sampling U in (0,1]
+        u = sampler.next_1d()
+        u = dr.maximum(u, 1e-10)
+
+        # Conversion from pair rate to mean OPL separation, then sample an exponential
+        c = mi.Float(299792458.0)
+        mean_delta_opl = c / self.pair_rate_hz
+        delta_opl = -mean_delta_opl * dr.log(u)
+
+        # Calculate the cumulative sum to obtain absolute emission times
+        emission_opl = dr.prefix_sum(delta_opl)
+        
         event_weight = self.event_weight * pair_weight
         film.append_events(
             mi.Point2f(signal_x, signal_y),

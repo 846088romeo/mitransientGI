@@ -30,8 +30,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("ghost_output"),
-        help="directory for NumPy outputs (default: ghost_output)",
+        default=Path("output/ghost_output"),
+        help="directory for NumPy outputs (default: output/ghost_output)",
     )
     parser.add_argument(
         "--variant",
@@ -53,6 +53,12 @@ def parse_args() -> argparse.Namespace:
         "--no-auto-window",
         action="store_true",
         help="keep the OPL windows written in the XML",
+    )
+    parser.add_argument(
+        "--ray-noise-sigma",
+        type=float,
+        default=0.002,
+        help="standard deviation of Gaussian noise added to ray directions (default: 0.002)",
     )
     return parser.parse_args()
 
@@ -220,48 +226,8 @@ def main() -> int:
         params["debug"] = mi.Bool(True)
         params.update()
 
-    # Previous call was commented out to avoid excessive memory usage with large spp values.
-    # steady, transient = scene.integrator().render(scene, spp=args.spp)
-    # dr.eval(steady, transient)
-
-    # Batch rendering to avoid excessive memory usage with large spp values
-
-    batch_spp = args.spp  # Maximum number of pairs to render in a single batch (ADJUSTABLE)
-    num_batches = args.spp // batch_spp
-    remainder = args.spp % batch_spp
-    batches = [batch_spp] * num_batches + ([remainder] if remainder > 0 else [])
-    
-    transient_array = None
-    steady_array = None
-
-    print(f"Splitting rendering into {len(batches)} batches.")
-    scene.sensors()[0].film().clear()
-    pair_rate_hz = float(np.asarray(
-        scene.integrator().pair_rate_hz
-    ).item())
-    emission_offset_opl = 0.0
-    
-    for i, current_spp in enumerate(batches):
-        if args.debug:
-            params = mi.traverse(scene.integrator())
-            params["debug"] = mi.Bool(True)
-            params.update()
-
-        params = mi.traverse(scene.integrator())
-        params["emission_opl_offset"] = mi.Float(emission_offset_opl)
-        params.update()
-            
-        # Renderiza el lote actual cambiando la semilla para tener nuevo ruido
-        scene.integrator().render(
-            scene, spp=current_spp, seed=i, develop=False
-        )
-        emission_offset_opl += current_spp * C / pair_rate_hz
-
-        print(
-            f"\r\033[KBatch {i+1}/{len(batches)} completed.",
-            end="",
-            flush=True,
-        )
+    steady, transient = scene.integrator().render(scene, spp=args.spp)
+    dr.eval(steady, transient)
 
     print()
 

@@ -29,8 +29,18 @@ class SPDCPairEmitter(mi.Emitter):
         )
         self.pair_weight = mi.Float(props.get("pair_weight", 1.0))
         self.m_flags = mi.EmitterFlags.Delta
+        self.ray_noise_sigma = mi.Float(props.get("ray_noise_sigma", 0.0))
 
-    def sample_pair(self, sample: mi.Point2f,
+    def _box_muller(self, sample: mi.Point2f) -> Tuple[mi.Float, mi.Float]:
+        """Return a pair of independent standard normal random variables."""
+        r = dr.sqrt(-2.0 * dr.log(dr.maximum(sample.x, 1e-10)))
+        theta = 2.0 * dr.pi * sample.y
+        return r * dr.cos(theta), r * dr.sin(theta)
+
+    def sample_pair(self, 
+                    sample: mi.Point2f,
+                    noise_sample_idler: mi.Point2f = None,
+                    noise_sample_signal: mi.Point2f = None,
                     active: mi.Bool = True) -> Tuple[mi.Ray3f, mi.Ray3f, mi.Float]:
         """Return ``(signal_ray, idler_ray, pair_weight)`` for each lane."""
         forward = dr.normalize(self.target - self.source)
@@ -41,10 +51,24 @@ class SPDCPairEmitter(mi.Emitter):
         up = dr.normalize(dr.cross(right, forward))
 
         tangent = dr.tan(self.max_angle)
-        transverse = ((2.0 * sample.x - 1.0) * tangent * right +
-                      (2.0 * sample.y - 1.0) * tangent * up)
-        idler_direction = dr.normalize(forward + transverse)
-        signal_direction = dr.normalize(-forward - transverse)
+        ax = (2.0 * sample.x - 1.0) * tangent
+        ay = (2.0 * sample.y - 1.0) * tangent
+
+        if noise_sample_idler is not None and noise_sample_signal is not None:
+            ni0, ni1 = self._box_muller(noise_sample_idler)
+            ns0, ns1 = self._box_muller(noise_sample_signal)
+
+            idler_ax = ax + ni0 * self.ray_noise_sigma
+            idler_ay = ay + ni1 * self.ray_noise_sigma
+            signal_ax = -ax - ns0 * self.ray_noise_sigma
+            signal_ay = -ay - ns1 * self.ray_noise_sigma
+
+            idler_direction = dr.normalize(forward + idler_ax * right + idler_ay * up)
+            signal_direction = dr.normalize(-forward + signal_ax * right + signal_ay * up)
+        else:
+            transverse = ax * right + ay * up
+            idler_direction = dr.normalize(forward + transverse)
+            signal_direction = dr.normalize(-forward - transverse)
 
         return (
             mi.Ray3f(self.source, signal_direction),
