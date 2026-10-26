@@ -8,6 +8,12 @@
         <float name="bucket_radius" value="0.3"/>
         <float name="pair_rate_hz" value="1e8"/>
         <float name="event_weight" value="1.0"/>
+
+        <!-- Noise parameters -->
+        <float name="signal_jitter_ps" value="50.0"/>
+        <float name="bucket_jitter_ps" value="50.0"/>
+        <float name="time_quantization_ps" value="10.0"/>
+        <float name="pde" value="0.5"/> <!-- 50% de eficiencia cuántica -->
     </integrator>
 
     <sensor type="perspective">

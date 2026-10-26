@@ -95,31 +95,6 @@ class GhostTransientFilm(mi.Film):
     def _event_index(self, opl: mi.Float):
         return dr.floor((opl - self.event_start_opl) / self.event_bin_width_opl)
 
-    def add_signal_event(self, pixel: mi.Point2f, opl: mi.Float,
-                         value: mi.Float = 1.0, active: mi.Bool = True):
-        """Accumulate an event from the SPAD array."""
-        pixel_x = mi.UInt64(dr.floor(pixel.x))
-        pixel_y = mi.UInt64(dr.floor(pixel.y))
-        time_bin = mi.UInt64(self._event_index(opl))
-        width = mi.UInt64(self.size().x)
-        height = mi.UInt64(self.size().y)
-        event_bins = mi.UInt64(self.event_bins)
-        valid = active & (pixel_x >= 0) & (pixel_x < width)
-        valid &= (pixel_y >= 0) & (pixel_y < height)
-        valid &= (time_bin >= 0) & (time_bin < event_bins)
-        index = (pixel_y * width + pixel_x) * event_bins + time_bin
-        dr.scatter_reduce(dr.ReduceOp.Add, self.signal_storage.array,
-                          value, index, valid)
-
-    def add_bucket_event(self, opl: mi.Float, value: mi.Float = 1.0,
-                         active: mi.Bool = True):
-        """Accumulate an event from the single-pixel bucket detector."""
-        time_bin = mi.UInt64(self._event_index(opl))
-        event_bins = mi.UInt64(self.event_bins)
-        valid = active & (time_bin >= 0) & (time_bin < event_bins)
-        dr.scatter_reduce(dr.ReduceOp.Add, self.bucket_storage.array,
-                          value, time_bin, valid)
-
     def append_events(self, pixel: mi.Point2f,
                       signal_opl: mi.Float, bucket_opl: mi.Float,
                       value: mi.Float, signal_active: mi.Bool,
@@ -127,20 +102,24 @@ class GhostTransientFilm(mi.Film):
         """Store only valid events from one vectorized batch."""
         signal_indices = dr.compress(signal_active)
         bucket_indices = dr.compress(bucket_active)
-        signal_x = dr.gather(mi.Float, pixel.x, signal_indices)
-        signal_y = dr.gather(mi.Float, pixel.y, signal_indices)
-        signal_time = dr.gather(mi.Float, signal_opl, signal_indices)
-        signal_value = dr.gather(mi.Float, value, signal_indices)
-        bucket_time = dr.gather(mi.Float, bucket_opl, bucket_indices)
-        bucket_value = dr.gather(mi.Float, value, bucket_indices)
-        dr.eval(signal_x, signal_y, signal_time, signal_value,
-            bucket_time, bucket_value)
-        self.signal_event_x.append(np.asarray(signal_x).copy())
-        self.signal_event_y.append(np.asarray(signal_y).copy())
-        self.signal_event_opl.append(np.asarray(signal_time).copy())
-        self.signal_event_value.append(np.asarray(signal_value).copy())
-        self.bucket_event_opl.append(np.asarray(bucket_time).copy())
-        self.bucket_event_value.append(np.asarray(bucket_value).copy())
+
+        if dr.width(signal_indices) > 0:
+            signal_x = dr.gather(mi.Float, pixel.x, signal_indices)
+            signal_y = dr.gather(mi.Float, pixel.y, signal_indices)
+            signal_time = dr.gather(mi.Float, signal_opl, signal_indices)
+            signal_value = dr.gather(mi.Float, value, signal_indices)
+            dr.eval(signal_x, signal_y, signal_time, signal_value)
+            self.signal_event_x.append(np.asarray(signal_x).copy())
+            self.signal_event_y.append(np.asarray(signal_y).copy())
+            self.signal_event_opl.append(np.asarray(signal_time).copy())
+            self.signal_event_value.append(np.asarray(signal_value).copy())
+
+        if dr.width(bucket_indices) > 0:
+            bucket_time = dr.gather(mi.Float, bucket_opl, bucket_indices)
+            bucket_value = dr.gather(mi.Float, value, bucket_indices)
+            dr.eval(bucket_time, bucket_value)
+            self.bucket_event_opl.append(np.asarray(bucket_time).copy())
+            self.bucket_event_value.append(np.asarray(bucket_value).copy())
 
     def add_debug_events(self, pixel: mi.Point2f, signal_active: mi.Bool,
                          scene_active: mi.Bool, bucket_active: mi.Bool):
@@ -158,39 +137,6 @@ class GhostTransientFilm(mi.Film):
                           mi.Float(1.0), index, valid & scene_active)
         dr.scatter_reduce(dr.ReduceOp.Add, self.debug_bucket_storage.array,
                           mi.Float(1.0), mi.UInt32(0), bucket_active)
-
-    # def develop(self, raw: bool = False):
-    #     """Return integrated correlation and ``(y, x, delta_opl, 1)``."""
-    #     dr.eval(self.signal_storage, self.bucket_storage)
-    #     signal = np.asarray(self.signal_storage).copy()
-    #     bucket = np.asarray(self.bucket_storage).copy()
-
-    #     if raw:
-    #         return None, mi.TensorXf(signal[..., None])
-
-    #     height, width, _ = signal.shape
-    #     temporal_bins = int(np.asarray(self.temporal_bins).item())
-    #     correlation = np.zeros(
-    #         (height, width, temporal_bins),
-    #         dtype=np.float32
-    #     )
-    #     center = int(np.asarray(self.event_bins).item()) - 1
-    #     start_opl = float(np.asarray(self.start_opl).item())
-    #     event_start_opl = float(np.asarray(self.event_start_opl).item())
-    #     bin_width_opl = float(np.asarray(self.bin_width_opl).item())
-    #     start = int(np.floor((start_opl - event_start_opl) /
-    #                  bin_width_opl))
-    #     for y in range(height):
-    #         for x in range(width):
-    #             # full = np.correlate(bucket, signal[y, x], mode="full")
-    #             full = scipy_signal.correlate(bucket, signal[y, x], mode="full", method="fft")
-    #             indices = center + start + np.arange(temporal_bins)
-    #             valid = (indices >= 0) & (indices < full.size)
-    #             correlation[y, x, valid] = full[indices[valid]]
-
-    #     transient = mi.TensorXf(correlation[..., None])
-    #     steady = mi.TensorXf(np.sum(correlation, axis=2)[..., None])
-    #     return steady, transient
 
     def develop(self, raw: bool = False):
         """Return integrated correlation and ``(y, x, delta_opl, 1)``."""
