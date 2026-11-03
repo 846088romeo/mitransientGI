@@ -1,0 +1,37 @@
+      +-------------------------------------------------------+
+      |  1. Emitter (SPDCPairEmitter.sample_pair)             |
+      |  Genera N pares de rayos idler/signal anti-correl.    |
+      +---------------------------+---------------------------+
+                                  |
+            +---------------------+---------------------+
+            |                                           |
+            v                                           v
+  [ Brazo Signal (Ref) ]                      [ Brazo Idler (Objeto) ]
+  • Intersección analítica                   • Trazo en escena 3D
+    con plano SPAD (z = spad_z)                (scene.ray_intersect)
+  • Cálculo de píxel (px, py)                 • Muestreo Lambertiano (BSDF)
+  • Máscara signal_active                    • Trazo a detector Bucket
+  • Jitter + Cuantización                      • Máscara bucket_active
+            |                                  • Jitter + Cuantización
+            +---------------------+---------------------+
+                                  |
+                                  v
+      +-------------------------------------------------------+
+      |  2. Proceso de Emisión Temporal (Poisson)             |
+      |  delta_opl = -mean * log(u)                           |
+      |  emission_opl = dr.prefix_sum(delta_opl)              |
+      +---------------------------+---------------------------+
+                                  |
+                                  v
+      +-------------------------------------------------------+
+      |  3. Film (GhostTransientFilm.append_events)           |
+      |  Compresión de vectores activos via dr.compress()     |
+      |  Transferencia de arrays comprimidos a NumPy          |
+      +---------------------------+---------------------------+
+                                  |
+                                  v
+      +-------------------------------------------------------+
+      |  4. Post-procesado temporal (GhostTransientFilm.develop) |
+      |  np.searchsorted (O(N log N)) sobre la ventana Delta t |
+      |  Acumulación np.add.at en histograma 3D G^(2)        |
+      +-------------------------------------------------------+

@@ -95,7 +95,7 @@ class GhostTransientFilm(mi.Film):
     def _event_index(self, opl: mi.Float):
         return dr.floor((opl - self.event_start_opl) / self.event_bin_width_opl)
 
-    def append_events(self, pixel: mi.Point2f,
+    def append_events(self, pixel: mi.Point2f, emission_opl:mi.Float,
                       signal_opl: mi.Float, bucket_opl: mi.Float,
                       value: mi.Float, signal_active: mi.Bool,
                       bucket_active: mi.Bool):
@@ -106,19 +106,27 @@ class GhostTransientFilm(mi.Film):
         if dr.width(signal_indices) > 0:
             signal_x = dr.gather(mi.Float, pixel.x, signal_indices)
             signal_y = dr.gather(mi.Float, pixel.y, signal_indices)
-            signal_time = dr.gather(mi.Float, signal_opl, signal_indices)
+
+            # 64-bit extraction of the OPL values to avoid precision loss in the correlation
+            e_opl_signal = np.asarray(dr.gather(mi.Float, emission_opl, signal_indices), dtype=np.float64)
+            s_rel = np.asarray(dr.gather(mi.Float, signal_opl, signal_indices), dtype=np.float64)
+            signal_time = e_opl_signal + s_rel
             signal_value = dr.gather(mi.Float, value, signal_indices)
-            dr.eval(signal_x, signal_y, signal_time, signal_value)
+            dr.eval(signal_x, signal_y, signal_value)
+
             self.signal_event_x.append(np.asarray(signal_x).copy())
             self.signal_event_y.append(np.asarray(signal_y).copy())
-            self.signal_event_opl.append(np.asarray(signal_time).copy())
+            self.signal_event_opl.append(signal_time.copy())
             self.signal_event_value.append(np.asarray(signal_value).copy())
 
         if dr.width(bucket_indices) > 0:
-            bucket_time = dr.gather(mi.Float, bucket_opl, bucket_indices)
+            e_opl_bucket = np.asarray(dr.gather(mi.Float, emission_opl, bucket_indices), dtype=np.float64)
+            b_rel = np.asarray(dr.gather(mi.Float, bucket_opl, bucket_indices), dtype=np.float64)
+            bucket_time = e_opl_bucket + b_rel
             bucket_value = dr.gather(mi.Float, value, bucket_indices)
-            dr.eval(bucket_time, bucket_value)
-            self.bucket_event_opl.append(np.asarray(bucket_time).copy())
+            dr.eval(bucket_value)
+            
+            self.bucket_event_opl.append(bucket_time.copy())
             self.bucket_event_value.append(np.asarray(bucket_value).copy())
 
     def add_debug_events(self, pixel: mi.Point2f, signal_active: mi.Bool,
@@ -138,13 +146,13 @@ class GhostTransientFilm(mi.Film):
         dr.scatter_reduce(dr.ReduceOp.Add, self.debug_bucket_storage.array,
                           mi.Float(1.0), mi.UInt32(0), bucket_active)
 
+
     def develop(self, raw: bool = False):
         """Return integrated correlation and ``(y, x, delta_opl, 1)``."""
         height = int(self.size().y)
         width = int(self.size().x)
         temporal_bins = int(np.asarray(self.temporal_bins).item())
         start_opl = float(np.asarray(self.start_opl).item())
-        event_start_opl = float(np.asarray(self.event_start_opl).item())
         bin_width_opl = float(np.asarray(self.bin_width_opl).item())
         correlation = np.zeros((height, width, temporal_bins), dtype=np.float32)
 
@@ -164,25 +172,31 @@ class GhostTransientFilm(mi.Film):
             delta_min = start_opl
             delta_max = start_opl + temporal_bins * bin_width_opl
 
-            for bucket_time, bucket_weight in zip(bucket_opl, bucket_value):
-                lo = np.searchsorted(signal_opl,
-                                     bucket_time - delta_max,
-                                     side="right")
-                hi = np.searchsorted(signal_opl,
-                                     bucket_time - delta_min,
-                                     side="left")
-                if lo >= hi:
-                    continue
-                delta = bucket_time - signal_opl[lo:hi]
-                bins = np.floor((delta - start_opl) /
-                                bin_width_opl).astype(np.intp)
-                valid = (bins >= 0) & (bins < temporal_bins)
-                np.add.at(
-                    correlation,
-                    (signal_y[lo:hi][valid], signal_x[lo:hi][valid],
-                     bins[valid]),
-                    signal_value[lo:hi][valid] * bucket_weight,
-                )
+            chunk_size = 10000
+            num_buckets = len(bucket_opl)
+
+            for i in range(0, num_buckets, chunk_size):
+                b_opl_chuck = bucket_opl[i:i + chunk_size]
+                b_val_chunk = bucket_value[i:i + chunk_size]
+
+                los = np.searchsorted(signal_opl, b_opl_chuck - delta_max, side="right")
+                his = np.searchsorted(signal_opl, b_opl_chuck - delta_min, side="left")
+
+                for b_idx in range(len(b_opl_chuck)):
+                    lo = los[b_idx]
+                    hi = his[b_idx]
+                    if lo >= hi:
+                        continue
+
+                    delta = b_opl_chuck[b_idx] - signal_opl[lo:hi]
+                    bins = np.floor((delta - start_opl) / bin_width_opl).astype(np.intp)
+                    valid = (bins >= 0) & (bins < temporal_bins)
+                    if np.any(valid):
+                        np.add.at(
+                            correlation,
+                            (signal_y[lo:hi][valid], signal_x[lo:hi][valid], bins[valid]),
+                            signal_value[lo:hi][valid] * b_val_chunk[b_idx],
+                        )
 
         transient = mi.TensorXf(correlation[..., None])
         steady = mi.TensorXf(np.sum(correlation, axis=2)[..., None])

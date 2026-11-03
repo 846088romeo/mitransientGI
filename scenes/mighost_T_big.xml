@@ -1,0 +1,81 @@
+<scene version="3.0.0">
+
+    <!-- The source is behind the T along -z. The signal arm goes to z=-4. -->
+    <integrator type="qghost">
+        <float name="spad_z" value="-1.0"/>
+        <float name="spad_half_width" value="0.5"/>
+        <float name="spad_half_height" value="0.5"/>
+        <float name="bucket_radius" value="0.3"/>
+        <float name="pair_rate_hz" value="1e8"/>
+        <float name="event_weight" value="1.0"/>
+
+        <!-- Noise parameters -->
+        <float name="signal_jitter_ps" value="50.0"/>
+        <float name="bucket_jitter_ps" value="50.0"/>
+        <float name="time_quantization_ps" value="10.0"/>
+        <float name="pde" value="0.5"/> <!-- 50% de eficiencia cuántica -->
+    </integrator>
+
+    <sensor type="perspective">
+        <float name="fov" value="40"/>
+        <transform name="to_world">
+            <lookat origin="0, 5, -3" target="0, 5, -1" up="0, 1, 0"/>
+        </transform>
+        <sampler type="independent">
+            <integer name="sample_count" value="256"/>
+        </sampler>
+        <film type="ghost_film">
+            <integer name="width" value="128"/>
+            <integer name="height" value="128"/>
+
+            <!-- run_qghost.py adapts this absolute event window to the scene. -->
+            <integer name="event_bins" value="1024"/>
+            <float name="event_start_opl" value="0.0"/>
+            <float name="event_bin_width_opl" value="0.01"/>
+
+            <!-- Cross-correlation axis in OPL metres; auto-adjusted by run_qghost.py. -->
+            <integer name="temporal_bins" value="512"/>
+            <float name="start_opl" value="0.0"/>
+            <float name="bin_width_opl" value="0.01"/>
+        </film>
+    </sensor>
+
+    <!-- Point-like SPDC source. The bucket is centered at source. -->
+    <emitter type="spdc_pair">
+        <point name="source" x="0" y="5" z="-1.605801"/>
+        <point name="target" x="0" y="5" z="-1"/>
+        <float name="max_angle_deg" value="24.087467"/>
+        <float name="pair_weight" value="1"/>
+    </emitter>
+
+    <bsdf type="twosided" id="mat-Material">
+        <bsdf type="principled">
+            <rgb name="base_color" value="0.8, 0.8, 0.8"/>
+            <float name="roughness" value="0.25"/>
+            <float name="metallic" value="0"/>
+            <float name="spec_trans" value="0"/>
+        </bsdf>
+    </bsdf>
+
+    <bsdf type="twosided" id="mat-Material.001">
+        <bsdf type="principled">
+            <rgb name="base_color" value="0.8, 0.8, 0.8"/>
+            <float name="roughness" value="0.25"/>
+            <float name="metallic" value="0"/>
+            <float name="spec_trans" value="0"/>
+        </bsdf>
+    </bsdf>
+
+    <shape type="ply">
+        <string name="filename" value="meshes/downT.ply"/>
+        <boolean name="face_normals" value="true"/>
+        <ref id="mat-Material" name="bsdf"/>
+    </shape>
+
+    <shape type="ply">
+        <string name="filename" value="meshes/upT.ply"/>
+        <boolean name="face_normals" value="true"/>
+        <ref id="mat-Material.001" name="bsdf"/>
+    </shape>
+
+</scene>

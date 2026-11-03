@@ -5,7 +5,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import numpy as np
+from scipy.ndimage import gaussian_filter, label
 from pathlib import Path
+from tqdm import tqdm
+
 
 C = 299792458.0
 
@@ -62,6 +66,48 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+def crop_ROI(data: np.ndarray, margin_px: int = 4, quantile: float = 80.0):
+    """Detect the region of interest (ROI) in a 3D histogram and crop it with a margin.
+    
+    Args:
+        data: 3D NumPy array representing the histogram (height x width x temporal bins).
+        margin_px: Number of pixels to add as a margin around the detected ROI (default: 4).
+        quantile: Quantile value to determine the threshold for active pixels (default: 80.0).
+    
+    Returns:
+        tuple: (y_min, y_max, x_min, x_max)
+    """
+
+    height, width = data.shape[:2]
+
+    # Compute the signal map by taking the maximum along the temporal axis and subtracting the median
+    signal_map = np.max(data, axis=2) - np.median(data, axis=2)
+
+    # Apply Gaussian smoothing to the signal map
+    smoothed = gaussian_filter(signal_map, sigma=1.2)
+
+    positive_vals = smoothed[smoothed > 0]
+    if positive_vals.size == 0:
+        return 0, height - 1, 0, width - 1
+    
+    threshold = np.percentile(positive_vals, quantile)
+    binary_mask = smoothed > threshold
+
+    labeled, num_features = label(binary_mask)
+    if num_features == 0:
+        return 0, height - 1, 0, width - 1
+
+    sizes = [np.sum(labeled == i) for i in range(1, num_features + 1)]
+    largest_label = np.argmax(sizes) + 1
+
+    ys, xs = np.where(labeled == largest_label)
+
+    y_min = max(0, int(np.min(ys)) - margin_px)
+    y_max = min(height - 1, int(np.max(ys)) + margin_px)
+    x_min = max(0, int(np.min(xs)) - margin_px)
+    x_max = min(width - 1, int(np.max(xs)) + margin_px)
+
+    return y_min, y_max, x_min, x_max
 
 def save_visualizations(output, histogram, film, spad_z, grid_size):
     try:
@@ -113,17 +159,12 @@ def save_visualizations(output, histogram, film, spad_z, grid_size):
     plt.close(fig)
 
     n = max(1, int(grid_size))
-    active = intensity > 0
-    if np.any(active):
-        ys, xs = np.where(active)
-        y_min, y_max = int(ys.min()), int(ys.max())
-        x_min, x_max = int(xs.min()), int(xs.max())
-    else:
-        y_min, y_max = 0, data.shape[0] - 1
-        x_min, x_max = 0, data.shape[1] - 1
+    y_min, y_max, x_min, x_max = crop_ROI(data)
 
+    print(f"Histogram grid region: x=[{x_min}, {x_max}], y=[{y_min}, {y_max}]")
     y_samples = np.linspace(y_min, y_max, n).astype(int)
     x_samples = np.linspace(x_min, x_max, n).astype(int)
+
     fig, axes = plt.subplots(n, n, figsize=(3.0 * n, 2.2 * n),
                              sharex=True, sharey=True, squeeze=False)
     for iy, y in enumerate(y_samples):
@@ -226,10 +267,18 @@ def main() -> int:
         params["debug"] = mi.Bool(True)
         params.update()
 
-    steady, transient = scene.integrator().render(scene, spp=args.spp)
-    dr.eval(steady, transient)
+    with tqdm(total=100, desc="Rendering QGI Batches", unit="%") as pbar:
+        last_p = [0]
+        def update_progress(p: float):
+            diff = int(p - last_p[0]) * 100
+            if diff > 0:
+                pbar.update(diff)
+                last_p[0] = p
 
-    print()
+        steady, transient = scene.integrator().render(scene, spp=args.spp, progress_callback=update_progress)
+        dr.eval(steady, transient)
+
+    print("Rendering complete. Saving outputs...")
 
     args.output.mkdir(parents=True, exist_ok=True)
     steady, transient = scene.sensors()[0].film().develop()
