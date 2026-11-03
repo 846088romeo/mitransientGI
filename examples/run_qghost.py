@@ -77,7 +77,7 @@ def crop_ROI(data: np.ndarray, margin_px: int = 4, quantile: float = 80.0):
     Returns:
         tuple: (y_min, y_max, x_min, x_max)
     """
-
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
     height, width = data.shape[:2]
 
     # Compute the signal map by taking the maximum along the temporal axis and subtracting the median
@@ -101,6 +101,8 @@ def crop_ROI(data: np.ndarray, margin_px: int = 4, quantile: float = 80.0):
     largest_label = np.argmax(sizes) + 1
 
     ys, xs = np.where(labeled == largest_label)
+    if ys.size == 0 or xs.size == 0:
+        return 0, height - 1, 0, width - 1
 
     y_min = max(0, int(np.min(ys)) - margin_px)
     y_max = min(height - 1, int(np.max(ys)) + margin_px)

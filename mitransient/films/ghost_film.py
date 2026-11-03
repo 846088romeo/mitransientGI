@@ -154,7 +154,7 @@ class GhostTransientFilm(mi.Film):
         temporal_bins = int(np.asarray(self.temporal_bins).item())
         start_opl = float(np.asarray(self.start_opl).item())
         bin_width_opl = float(np.asarray(self.bin_width_opl).item())
-        correlation = np.zeros((height, width, temporal_bins), dtype=np.float32)
+        correlation = np.zeros((height, width, temporal_bins), dtype=np.float64)
 
         if self.signal_event_opl and self.bucket_event_opl:
             signal_x = np.concatenate(self.signal_event_x).astype(np.intp)
@@ -172,7 +172,7 @@ class GhostTransientFilm(mi.Film):
             delta_min = start_opl
             delta_max = start_opl + temporal_bins * bin_width_opl
 
-            chunk_size = 10000
+            chunk_size = 50000
             num_buckets = len(bucket_opl)
 
             for i in range(0, num_buckets, chunk_size):

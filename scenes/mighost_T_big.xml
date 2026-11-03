@@ -1,12 +1,13 @@
 <scene version="3.0.0">
 
+	<default name="spp" value="1000000"/>
     <!-- The source is behind the T along -z. The signal arm goes to z=-4. -->
     <integrator type="qghost">
         <float name="spad_z" value="-1.0"/>
         <float name="spad_half_width" value="0.5"/>
         <float name="spad_half_height" value="0.5"/>
-        <float name="bucket_radius" value="0.3"/>
-        <float name="pair_rate_hz" value="1e8"/>
+        <float name="bucket_radius" value="3.0"/>
+        <float name="pair_rate_hz" value="1e10"/>
         <float name="event_weight" value="1.0"/>
 
         <!-- Noise parameters -->
@@ -14,6 +15,11 @@
         <float name="bucket_jitter_ps" value="50.0"/>
         <float name="time_quantization_ps" value="10.0"/>
         <float name="pde" value="0.5"/> <!-- 50% de eficiencia cuántica -->
+
+		<!-- Participating medium parameters -->
+        <float name="sigma_s" value="0.1"/>  <!-- Scattering coefficient (m^-1) -->
+        <float name="sigma_a" value="0.01"/> <!-- Absorption coefficient (m^-1) -->
+        <float name="g_hg" value="0.0"/>     <!-- Henyey-Greenstein asymmetry parameter -->
     </integrator>
 
     <sensor type="perspective">
@@ -31,12 +37,12 @@
             <!-- run_qghost.py adapts this absolute event window to the scene. -->
             <integer name="event_bins" value="1024"/>
             <float name="event_start_opl" value="0.0"/>
-            <float name="event_bin_width_opl" value="0.01"/>
+            <float name="event_bin_width_opl" value="0.02"/>
 
             <!-- Cross-correlation axis in OPL metres; auto-adjusted by run_qghost.py. -->
             <integer name="temporal_bins" value="512"/>
             <float name="start_opl" value="0.0"/>
-            <float name="bin_width_opl" value="0.01"/>
+            <float name="bin_width_opl" value="0.02"/>
         </film>
     </sensor>
 

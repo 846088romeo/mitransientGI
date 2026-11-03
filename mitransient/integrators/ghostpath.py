@@ -29,11 +29,9 @@ class QGhostIntegrator(TransientADIntegrator):
         self.pde = mi.Float(props.get("pde", 1.0))
 
         # Participating media parameters
-        # self.sigma_s = mi.Float(props.get("sigma_s", 0.0)) # Scattering coefficient
-        # self.sigma_a = mi.Float(props.get("sigma_a", 0.0)) # Absorption coefficient
-        # self.sigma_t = self.sigma_s + self.sigma_a # Extinction coefficient
-        # self.albedo = dr.select(self.sigma_t > 0.0, self.sigma_s / self.sigma_t, 0.0) # Albedo
-        # self.g_hg = mi.Float(props.get("g_hg", 0.0)) # Henyey-Greenstein phase function parameter
+        self.sigma_s = mi.Float(props.get("sigma_s", 0.0)) # Scattering coefficient
+        self.sigma_a = mi.Float(props.get("sigma_a", 0.0)) # Absorption coefficient
+        self.g_hg = mi.Float(props.get("g_hg", 0.0)) # Henyey-Greenstein phase function parameter
 
     def render(self, scene, sensor=0, seed=0, spp=0, develop=True,
                evaluate=True, progress_callback=None, batch_size=500000):
@@ -62,6 +60,10 @@ class QGhostIntegrator(TransientADIntegrator):
         c = mi.Float(299792458.0)
         mean_delta_opl = c / self.pair_rate_hz
 
+        sigma_t = self.sigma_s + self.sigma_a
+        has_medium = sigma_t > 1e-8
+        albedo = dr.select(has_medium, self.sigma_s / dr.maximum(sigma_t, 1e-10), 0.0)
+
         for batch in range(num_batches):
             current_spp = min(batch_size, total_pairs - batch * batch_size)
 
@@ -81,6 +83,9 @@ class QGhostIntegrator(TransientADIntegrator):
                 active=mi.Bool(True)
             )
 
+            ##############################
+            ## -- SIGNAL RAY TRACING -- ##
+            ##############################
             # Compute the intersection of the signal ray with the SPAD plane and
             # convert to film coordinates.
             source = emitter.source
@@ -101,16 +106,28 @@ class QGhostIntegrator(TransientADIntegrator):
                             (abs(signal_p.y - source.y) <= self.spad_half_height) & \
                             (sampler.next_1d() < self.pde)
 
+            ##############################
+            ## -- IDLER RAY TRACING -- ##
+            ##############################
+
             # Trace the idler ray to the scene
             scene_si = scene.ray_intersect(d_idler)
-            scene_active = scene_si.is_valid()
+            t_surface = dr.select(scene_si.is_valid(), scene_si.t, mi.Float(1e6))
+
+            u_vol = dr.maximum(sampler.next_1d(), 1e-10)
+            s_vol = dr.select(has_medium, -dr.log(u_vol) / dr.maximum(sigma_t, 1e-10), mi.Float(1e6))  # Sample a distance in the medium
+
+            is_volume_event = (s_vol < t_surface) & has_medium
+
+            # == SURFACE EVENT ==
+            surface_active = scene_si.is_valid() & ~is_volume_event
             normal = scene_si.sh_frame.n
             normal = dr.select(dr.dot(normal, idler_direction) > 0.0,
                     -normal, normal)
         
             # Ensure the normal is pointing in the correct direction
             normal = dr.normalize(normal)
-            local_sample = sampler.next_2d(scene_active)
+            local_sample = sampler.next_2d(surface_active)
             radius = dr.sqrt(local_sample.x)
             phi = 2.0 * dr.pi * local_sample.y
             helper = dr.select(abs(normal.y) < 0.9,
@@ -119,7 +136,7 @@ class QGhostIntegrator(TransientADIntegrator):
             bitangent = dr.cross(normal, tangent)
 
             # Sample a reflected ray from the scene intersection point
-            reflected = dr.normalize(
+            reflected_surf = dr.normalize(
                 (radius * dr.cos(phi)) * tangent +
                 (radius * dr.sin(phi)) * bitangent +
                 dr.sqrt(dr.maximum(0.0, 1.0 - local_sample.x)) * normal
@@ -127,16 +144,47 @@ class QGhostIntegrator(TransientADIntegrator):
 
             # Trace the reflected ray to the bucket detector and check if it falls within the bucket radius
             bucket_normal = dr.normalize(emitter.target - source)
-            denominator = dr.dot(bucket_normal, reflected)
-            bucket_t = dr.dot(source - scene_si.p, bucket_normal) / denominator
-            bucket_p = scene_si.p + bucket_t * reflected
+            denom_surf = dr.dot(bucket_normal, reflected_surf)
+            t_bucket_surf = dr.dot(source - scene_si.p, bucket_normal) / denom_surf
+            p_bucket_surf = scene_si.p + t_bucket_surf * reflected_surf
 
             # Check if the bucket intersection point is within the bucket radius and if the ray is valid
-            bucket_active = scene_active & (denominator < -1e-8) & (bucket_t > 1e-6) & \
-                  (dr.norm(bucket_p - source) <= self.bucket_radius) & (sampler.next_1d() < self.pde)
+            bucket_active_surf = surface_active & (denom_surf < -1e-8) & (t_bucket_surf > 1e-6) & \
+                  (dr.norm(p_bucket_surf - source) <= self.bucket_radius) & (sampler.next_1d() < self.pde)
+
+            # Calculate the relative optical path length
+            rel_opl_surf = scene_si.t + t_bucket_surf
+
+            # == VOLUME EVENT ==
+            p_vol = source + s_vol * idler_direction
+            u_vol_dir = sampler.next_2d(is_volume_event)
+            z_dir = 1.0 - 2.0 * u_vol_dir.x
+            r_dir = dr.sqrt(dr.maximum(0.0, 1.0 - z_dir * z_dir))
+            phi_dir = 2.0 * dr.pi * u_vol_dir.y
+            d_vol_reflected = mi.Vector3f(r_dir * dr.cos(phi_dir), r_dir * dr.sin(phi_dir), z_dir)
+
+            denom_vol = dr.dot(bucket_normal, d_vol_reflected)
+            t_bucket_vol = dr.dot(source - p_vol, bucket_normal) / denom_vol
+            p_bucket_vol = p_vol + t_bucket_vol * d_vol_reflected
+
+            bucket_active_vol = is_volume_event & (denom_vol < -1e-8) & (t_bucket_vol > 1e-6) & \
+                (dr.norm(p_bucket_vol - source) <= self.bucket_radius) & (sampler.next_1d() < self.pde)
+
+            rel_opl_vol = s_vol + t_bucket_vol
+            safe_rel_opl_vol = dr.maximum(rel_opl_vol, 0.0)
+            safe_rel_opl_surf = dr.maximum(rel_opl_surf, 0.0)
+
+            attenuation_surface = dr.select(has_medium, dr.exp(-sigma_t * safe_rel_opl_surf), 1.0)
+            attenuation_volume = albedo * dr.select(has_medium, dr.exp(-sigma_t * safe_rel_opl_vol), mi.Float(1.0))
+
+            # Combine surface and volume events
+            bucket_active = dr.select(is_volume_event, bucket_active_vol, bucket_active_surf)
+            bucket_rel_opl = dr.select(is_volume_event, safe_rel_opl_vol, safe_rel_opl_surf)
+            weight_attenuation = dr.select(is_volume_event, attenuation_volume, attenuation_surface)
+            weight_attenuation = dr.select(dr.isfinite(weight_attenuation), weight_attenuation, mi.Float(0.0))
 
             # Random sampling U in (0,1]
-            u = dr.maximum(sampler.next_1d(), 1e-10)
+            u = dr.maximum(sampler.next_1d(), 1e-10)            
 
             # Conversion from pair rate to mean OPL separation, then sample an exponential
             delta_opl = -mean_delta_opl * dr.log(u)
@@ -147,10 +195,8 @@ class QGhostIntegrator(TransientADIntegrator):
             last_emission = dr.gather(mi.Float, emission_opl, mi.UInt32(current_spp - 1))
             dr.eval(last_emission)
             current_opl_offset = float(np.asarray(last_emission).item())
-            
-            # Compute the optical path lengths (OPL) for the signal and bucket detections
+
             signal_rel_opl = signal_t
-            bucket_rel_opl = scene_si.t + bucket_t
 
             # Apply jitter to the signal and bucket OPLs based on the specified jitter in picoseconds
             signal_jitter_opl = (self.signal_jitter_ps * 1e-12 * c)
@@ -182,21 +228,22 @@ class QGhostIntegrator(TransientADIntegrator):
                 emission_opl=emission_opl,
                 signal_opl=signal_rel_opl,
                 bucket_opl=bucket_rel_opl,
-                value=self.event_weight * pair_weight,
+                value=self.event_weight * pair_weight * weight_attenuation,
                 signal_active=signal_active,
                 bucket_active=bucket_active,
             )                  
 
             if self.debug:
+                scene_hit_count = scene_si.is_valid()
                 film.add_debug_events(
                     mi.Point2f(signal_x, signal_y),
                     signal_active,
-                    scene_active,
+                    scene_hit_count,
                     bucket_active,
                 )
 
                 current_signal_hits = int(np.asarray(dr.sum(mi.UInt32(signal_active))).item())
-                current_scene_hits = int(np.asarray(dr.sum(mi.UInt32(scene_active))).item())
+                current_scene_hits = int(np.asarray(dr.sum(mi.UInt32(scene_hit_count))).item())
                 current_bucket_hits = int(np.asarray(dr.sum(mi.UInt32(bucket_active))).item())
 
                 if not hasattr(film, "debug_stats") or batch == 0:
@@ -239,6 +286,10 @@ class QGhostIntegrator(TransientADIntegrator):
         callback.put("time_quantization_ps", self.time_quantization_ps,
                      mi.ParamFlags.NonDifferentiable)
         callback.put("pde", self.pde, mi.ParamFlags.NonDifferentiable)
+        callback.put("sigma_s", self.sigma_s, mi.ParamFlags.NonDifferentiable)
+        callback.put("sigma_a", self.sigma_a, mi.ParamFlags.NonDifferentiable)
+        callback.put("g_hg", self.g_hg, mi.ParamFlags.NonDifferentiable)
+
     def to_string(self):
         return "QGhostIntegrator[statistical streams, primal]"
 
