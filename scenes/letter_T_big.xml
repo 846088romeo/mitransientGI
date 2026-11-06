@@ -99,6 +99,7 @@
 		<ref id="mat-Material.001" name="bsdf"/>
 		<ref name="exterior" id="fog"/>
 	</shape>
+	<!-- <bsdf type="null" /> -->
 
 <!-- Volumes -->
 

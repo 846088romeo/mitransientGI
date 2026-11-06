@@ -31,7 +31,7 @@ class QGhostIntegrator(TransientADIntegrator):
         # Participating media parameters
         self.sigma_s = mi.Float(props.get("sigma_s", 0.0)) # Scattering coefficient
         self.sigma_a = mi.Float(props.get("sigma_a", 0.0)) # Absorption coefficient
-        self.g_hg = mi.Float(props.get("g_hg", 0.0)) # Henyey-Greenstein phase function parameter
+        self.g_hg = min(1.0, max(-1.0, mi.Float(props.get("g_hg", 0.0)))) # Henyey-Greenstein phase function parameter
 
     def render(self, scene, sensor=0, seed=0, spp=0, develop=True,
                evaluate=True, progress_callback=None, batch_size=500000):
@@ -130,8 +130,8 @@ class QGhostIntegrator(TransientADIntegrator):
             local_sample = sampler.next_2d(surface_active)
             radius = dr.sqrt(local_sample.x)
             phi = 2.0 * dr.pi * local_sample.y
-            helper = dr.select(abs(normal.y) < 0.9,
-                            mi.Vector3f(0, 1, 0), mi.Vector3f(1, 0, 0))
+            helper = dr.select(abs(normal.y) > 0.95,
+                            mi.Vector3f(1, 0, 0), mi.Vector3f(0, 1, 0))
             tangent = dr.normalize(dr.cross(helper, normal))
             bitangent = dr.cross(normal, tangent)
 
@@ -158,13 +158,32 @@ class QGhostIntegrator(TransientADIntegrator):
             # == VOLUME EVENT ==
             p_vol = source + s_vol * idler_direction
             u_vol_dir = sampler.next_2d(is_volume_event)
-            z_dir = 1.0 - 2.0 * u_vol_dir.x
-            r_dir = dr.sqrt(dr.maximum(0.0, 1.0 - z_dir * z_dir))
-            phi_dir = 2.0 * dr.pi * u_vol_dir.y
-            d_vol_reflected = mi.Vector3f(r_dir * dr.cos(phi_dir), r_dir * dr.sin(phi_dir), z_dir)
+            xi1, xi2 = u_vol_dir.x, u_vol_dir.y
+
+            abs_g = abs(self.g_hg)
+            is_isotropic = abs_g < 1e-4
+
+            sqr_term = (1.0 - self.g_hg * self.g_hg) / (1.0 - self.g_hg + 2.0 * self.g_hg * xi1)
+            cos_theta_hg = (1.0 + self.g_hg * self.g_hg - sqr_term * sqr_term) / (2.0 * dr.select(is_isotropic, mi.Float(1.0), self.g_hg))
+            cos_theta_iso = 1.0 - 2.0 * xi1
+
+            cos_theta = dr.select(is_isotropic, cos_theta_iso, cos_theta_hg)
+            sin_theta = dr.sqrt(dr.maximum(0.0, 1.0 - cos_theta * cos_theta))
+            phi = 2.0 * dr.pi * xi2
+
+            forward = idler_direction
+            helper = dr.select(abs(forward.y) > 0.95, mi.Vector3f(1, 0, 0), mi.Vector3f(0, 1, 0))
+            right = dr.normalize(dr.cross(forward, helper))
+            up = dr.cross(right, forward)
+
+            d_vol_reflected = dr.normalize(
+                sin_theta * dr.cos(phi) * right +
+                sin_theta * dr.sin(phi) * up +
+                cos_theta * forward
+            )
 
             denom_vol = dr.dot(bucket_normal, d_vol_reflected)
-            t_bucket_vol = dr.dot(source - p_vol, bucket_normal) / denom_vol
+            t_bucket_vol = dr.dot(source - p_vol, bucket_normal) / dr.select(abs(denom_vol) < 1e-6, mi.Float(-1e-6), denom_vol)
             p_bucket_vol = p_vol + t_bucket_vol * d_vol_reflected
 
             bucket_active_vol = is_volume_event & (denom_vol < -1e-8) & (t_bucket_vol > 1e-6) & \
@@ -222,7 +241,9 @@ class QGhostIntegrator(TransientADIntegrator):
             bucket_rel_opl = dr.select(quant_active,
                                 dr.round(bucket_rel_opl / dr.maximum(quant_step_opl, 1e-10)) * quant_step_opl,
                                 bucket_rel_opl)
-        
+
+            dr.eval(signal_x, signal_y, signal_rel_opl, bucket_rel_opl, signal_active, bucket_active, weight_attenuation)
+
             film.append_events(
                 pixel=mi.Point2f(signal_x, signal_y),
                 emission_opl=emission_opl,
@@ -262,7 +283,7 @@ class QGhostIntegrator(TransientADIntegrator):
                         film.debug_scene_storage,
                         film.debug_bucket_storage)
             if progress_callback:
-                progress_callback((batch+1)/num_batches)
+                progress_callback(batch + 1, num_batches)
         return film.develop() if develop else None
 
     def traverse(self, callback):

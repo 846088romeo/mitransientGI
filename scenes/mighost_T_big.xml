@@ -18,8 +18,8 @@
 
 		<!-- Participating medium parameters -->
         <float name="sigma_s" value="0.1"/>  <!-- Scattering coefficient (m^-1) -->
-        <float name="sigma_a" value="0.01"/> <!-- Absorption coefficient (m^-1) -->
-        <float name="g_hg" value="0.0"/>     <!-- Henyey-Greenstein asymmetry parameter -->
+        <float name="sigma_a" value="0.1"/> <!-- Absorption coefficient (m^-1) -->
+        <float name="g_hg" value="-0.9"/>     <!-- Henyey-Greenstein asymmetry parameter -->
     </integrator>
 
     <sensor type="perspective">

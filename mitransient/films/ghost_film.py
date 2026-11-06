@@ -8,6 +8,7 @@ import drjit as dr
 import mitsuba as mi
 import numpy as np
 from scipy import signal as scipy_signal
+from tqdm import tqdm
 
 
 class GhostTransientFilm(mi.Film):
@@ -148,6 +149,77 @@ class GhostTransientFilm(mi.Film):
 
 
     def develop(self, raw: bool = False):
+        """Return integrated correlation and ``(y, x, delta_opl, 1)``."""
+        height = int(self.size().y)
+        width = int(self.size().x)
+        temporal_bins = int(np.asarray(self.temporal_bins).item())
+        start_opl = float(np.asarray(self.start_opl).item())
+        bin_width_opl = float(np.asarray(self.bin_width_opl).item())
+        correlation = np.zeros((height, width, temporal_bins), dtype=np.float64)
+
+        if self.signal_event_opl and self.bucket_event_opl:
+            signal_x = np.concatenate(self.signal_event_x).astype(np.intp)
+            signal_y = np.concatenate(self.signal_event_y).astype(np.intp)
+            signal_opl = np.concatenate(self.signal_event_opl)
+            signal_value = np.concatenate(self.signal_event_value)
+            bucket_opl = np.concatenate(self.bucket_event_opl)
+            bucket_value = np.concatenate(self.bucket_event_value)
+
+            order = np.argsort(signal_opl)
+            signal_x = signal_x[order]
+            signal_y = signal_y[order]
+            signal_opl = signal_opl[order]
+            signal_value = signal_value[order]
+            delta_min = start_opl
+            delta_max = start_opl + temporal_bins * bin_width_opl
+
+            chunk_size = 100000
+            num_buckets = len(bucket_opl)
+
+            for i in tqdm(range(0, num_buckets, chunk_size), desc="Correlating events", unit="chunk"):
+                b_opl_chunk = bucket_opl[i:i + chunk_size]
+                b_val_chunk = bucket_value[i:i + chunk_size]
+
+                # Vectorized search for signal events that fall within the correlation window of each bucket event
+                los = np.searchsorted(signal_opl, b_opl_chunk - delta_max, side="right")
+                his = np.searchsorted(signal_opl, b_opl_chunk - delta_min, side="left")
+
+                # Filter out bucket events that have no corresponding signal events in the correlation window
+                counts = his - los
+                mask = counts > 0
+                if not np.any(mask):
+                    continue
+
+                b_opl_valid = b_opl_chunk[mask]
+                b_val_valid = b_val_chunk[mask]
+                los_valid = los[mask]
+                counts_valid = counts[mask]
+
+                # Vectorized expansion of bucket events to match the number of corresponding signal events
+                b_opl_exp = np.repeat(b_opl_valid, counts_valid)
+                b_val_exp = np.repeat(b_val_valid, counts_valid)
+
+                # Generate indices for the corresponding signal events
+                offsets = np.arange(np.sum(counts_valid)) - np.repeat(np.cumsum(counts_valid) - counts_valid, counts_valid)
+                sig_idx = np.repeat(los_valid, counts_valid) + offsets
+
+                # 1D arrays of signal events corresponding to the expanded bucket events
+                delta = b_opl_exp - signal_opl[sig_idx]
+                bins = np.floor((delta - start_opl) / bin_width_opl).astype(np.intp)
+                valid = (bins >= 0) & (bins < temporal_bins)
+
+                if np.any(valid):
+                    np.add.at(
+                        correlation,
+                        (signal_y[sig_idx][valid], signal_x[sig_idx][valid], bins[valid]),
+                        signal_value[sig_idx][valid] * b_val_exp[valid],
+                    )
+
+        transient = mi.TensorXf(correlation[..., None].astype(np.float32))
+        steady = mi.TensorXf(np.sum(correlation, axis=2)[..., None].astype(np.float32))
+        return steady, transient
+
+    def develop_for(self, raw: bool = False):
         """Return integrated correlation and ``(y, x, delta_opl, 1)``."""
         height = int(self.size().y)
         width = int(self.size().x)

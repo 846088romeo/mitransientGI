@@ -216,7 +216,7 @@ def configure_temporal_windows(scene, spp, margin=0.1):
     delta_max += margin * span
 
     film.start_opl = mi.Float(delta_min)
-    film.temporal_bins = mi.UInt32(
+    film.temporal_bins = mi.UInt64(
         max(1, int(np.ceil((delta_max - delta_min) /
                            float(film.bin_width_opl))))
     )
@@ -226,22 +226,10 @@ def configure_temporal_windows(scene, spp, margin=0.1):
     )
     event_max = emission_max + max(signal_max, 2.0 * d_max)
     film.event_start_opl = mi.Float(0.0)
-    film.event_bins = mi.UInt32(
+    film.event_bins = mi.UInt64(
         max(1, int(np.ceil(event_max /
                            float(film.event_bin_width_opl))) + 1)
     )
-
-    # start_value = float(np.asarray(film.start_opl).item())
-    # bin_width_value = float(np.asarray(film.bin_width_opl).item())
-    # temporal_bin_count = int(np.asarray(film.temporal_bins).item())
-    # event_bin_count = int(np.asarray(film.event_bins).item())
-    # delta_end = start_value + temporal_bin_count * bin_width_value
-    # print(
-    #     "Auto OPL window: "
-    #     f"scene_distance=[{d_min:.3f}, {d_max:.3f}] m, "
-    #     f"delta_opl=[{start_value:.3f}, {delta_end:.3f}] m, "
-    #     f"event_bins={event_bin_count}"
-    # )
 
 
 def main() -> int:
@@ -270,21 +258,21 @@ def main() -> int:
         params.update()
 
     with tqdm(total=100, desc="Rendering QGI Batches", unit="%") as pbar:
-        last_p = [0]
-        def update_progress(p: float):
-            diff = int(p - last_p[0]) * 100
+        last_pct = [0]
+        def update_progress(current, total):
+            pct = int((current / total) * 100)
+            diff = pct - last_pct[0]
             if diff > 0:
                 pbar.update(diff)
-                last_p[0] = p
+                last_pct[0] = pct
 
         steady, transient = scene.integrator().render(scene, spp=args.spp, progress_callback=update_progress)
-        dr.eval(steady, transient)
 
-    print("Rendering complete. Saving outputs...")
+    dr.eval(steady, transient)
+    print("Rendering complete, saving outputs...")
 
     args.output.mkdir(parents=True, exist_ok=True)
-    steady, transient = scene.sensors()[0].film().develop()
-    dr.eval(steady, transient)
+
     transient_array = np.asarray(transient)
     steady_array = np.asarray(steady)
     np.save(args.output / "histogram.npy", transient_array)
